@@ -7,10 +7,10 @@
 #include <string.h>
 #include <math.h>
 
-typedef struct { int32_t left, top, right, bottom; } PMRect;
-typedef struct { intptr_t identifier; PMRect bounds; } PMWindow;
-_Static_assert(sizeof(PMRect)==16,"PMRect ABI");
-_Static_assert(sizeof(PMWindow)==24,"arm64 PMWindow ABI");
+typedef struct { int32_t left, top, right, bottom; } PMonRect;
+typedef struct { intptr_t identifier; PMonRect bounds; } PMonWindow;
+_Static_assert(sizeof(PMonRect)==16,"PMonRect ABI");
+_Static_assert(sizeof(PMonWindow)==24,"arm64 PMonWindow ABI");
 
 static bool PMText(NSString *text, char *out, size_t capacity) {
     if (!text.length || !out || !capacity) return false;
@@ -19,9 +19,9 @@ static bool PMText(NSString *text, char *out, size_t capacity) {
 // One stable coordinate space across displays: Quartz top-left points times the primary display scale.
 static CGFloat PMScale(void) { return NSScreen.screens.firstObject.backingScaleFactor ?: 1.0; }
 static CGFloat PMTop(void) { return NSMaxY(NSScreen.screens.firstObject.frame); }
-static PMRect PMBounds(CGRect r) {
+static PMonRect PMBounds(CGRect r) {
     CGFloat s=PMScale();
-    return (PMRect){(int32_t)llround(r.origin.x*s),(int32_t)llround(r.origin.y*s),
+    return (PMonRect){(int32_t)llround(r.origin.x*s),(int32_t)llround(r.origin.y*s),
         (int32_t)llround(CGRectGetMaxX(r)*s),(int32_t)llround(CGRectGetMaxY(r)*s)};
 }
 static NSRunningApplication *PMFront(void) {
@@ -69,7 +69,7 @@ void pm_cursor(double *x,double *y) { @autoreleasepool {
     if (event) CFRelease(event);
     *x=point.x*PMScale();*y=point.y*PMScale();
 } }
-size_t pm_screens(PMRect *out,size_t capacity) { @autoreleasepool {
+size_t pm_screens(PMonRect *out,size_t capacity) { @autoreleasepool {
     size_t count=0;
     for (NSScreen *screen in NSScreen.screens) {
         if (count==capacity) break;
@@ -78,24 +78,24 @@ size_t pm_screens(PMRect *out,size_t capacity) { @autoreleasepool {
     }
     return count;
 } }
-static NSArray *PMWindows(void) {
+static NSArray *PMonWindows(void) {
     // Bounds, order and owner PID are public window metadata; no window titles or image capture.
     return CFBridgingRelease(CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly|kCGWindowListExcludeDesktopElements,kCGNullWindowID));
 }
-size_t pm_windows(PMWindow *out,size_t capacity) { @autoreleasepool {
+size_t pm_windows(PMonWindow *out,size_t capacity) { @autoreleasepool {
     size_t count=0;
-    for (NSDictionary *info in PMWindows()) {
+    for (NSDictionary *info in PMonWindows()) {
         if (count==capacity) break;
         if ([info[(__bridge NSString *)kCGWindowLayer] intValue]!=0 || [info[(__bridge NSString *)kCGWindowOwnerPID] intValue]==NSProcessInfo.processInfo.processIdentifier) continue;
         CGRect r;
         if (!CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)info[(__bridge NSString *)kCGWindowBounds],&r) || r.size.width<120 || r.size.height<20) continue;
-        out[count++]=(PMWindow){[info[(__bridge NSString *)kCGWindowNumber] integerValue],PMBounds(r)};
+        out[count++]=(PMonWindow){[info[(__bridge NSString *)kCGWindowNumber] integerValue],PMBounds(r)};
     }
     return count;
 } }
 bool pm_busy(void) { @autoreleasepool {
     NSRunningApplication *app=PMFront();if (!app) return false;
-    for (NSDictionary *info in PMWindows()) {
+    for (NSDictionary *info in PMonWindows()) {
         if ([info[(__bridge NSString *)kCGWindowOwnerPID] intValue]!=app.processIdentifier || [info[(__bridge NSString *)kCGWindowLayer] intValue]!=0) continue;
         CGRect r;
         if (!CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)info[(__bridge NSString *)kCGWindowBounds],&r)) return false;
@@ -109,7 +109,7 @@ bool pm_busy(void) { @autoreleasepool {
     return false;
 } }
 intptr_t pm_window_for_view(void *view) { return (intptr_t)(__bridge void *)((__bridge NSView *)view).window; }
-bool pm_window_bounds(intptr_t handle,PMRect *out) {
+bool pm_window_bounds(intptr_t handle,PMonRect *out) {
     NSWindow *window=(__bridge NSWindow *)(void *)handle;if (!window || !out) return false;
     NSRect r=window.frame;*out=PMBounds(CGRectMake(r.origin.x,PMTop()-NSMaxY(r),r.size.width,r.size.height));return true;
 }
