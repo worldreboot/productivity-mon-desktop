@@ -1,0 +1,39 @@
+name: Apple Silicon desktop
+on:
+  push:
+    branches: ['codex/apple-silicon-build']
+    paths:
+      - 'desk/app/**'
+      - 'desk/macos/**'
+      - 'packages/content/data/dex.json'
+      - '.github/workflows/desk-macos.yml'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'desk/app/**'
+      - 'desk/macos/**'
+      - 'packages/content/data/dex.json'
+      - '.github/workflows/desk-macos.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - name: Test platform and shared code
+        run: cargo test --locked --manifest-path desk/app/Cargo.toml --target aarch64-apple-darwin
+      - name: Build Apple Silicon executable
+        run: cargo build --locked --release --manifest-path desk/app/Cargo.toml --target aarch64-apple-darwin
+      - name: Upload development executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProductivityMon-apple-silicon-development
+          path: desk/app/target/aarch64-apple-darwin/release/desk-mons
+          if-no-files-found: error

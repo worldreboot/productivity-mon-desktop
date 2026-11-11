@@ -1,0 +1,71 @@
+[package]
+name = "desk-mons"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Desktop companions for Windows, with Apple Silicon support in development. See ../README.md."
+
+[build-dependencies]
+winresource = "0.1.34"
+cc = "1"
+
+[features]
+website-capture = []
+
+[[example]]
+name = "website_panels"
+required-features = ["website-capture"]
+
+[[example]]
+name = "friends_widget"
+required-features = ["website-capture"]
+
+[dependencies]
+# Platform backends are selected below; the UI and shaders are shared.
+wgpu = { version = "30", default-features = false, features = ["wgsl"] }
+winit = "0.30"
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
+glam = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+png = "0.17"
+image = { version = "0.25.10", default-features = false, features = ["png", "ico", "webp"] }
+# Blocking HTTP on the server thread: a report a minute needs no async runtime.
+ureq = { version = "2", features = ["json"] }
+# The panel: egui drawn by the app's own wgpu device, in a window of the app's own. No clipboard, links or
+# accessibility layers: it is buttons and lists.
+egui = { version = "0.37", default-features = false, features = ["default_fonts"] }
+egui-wgpu = { version = "0.37", default-features = false }
+egui-winit = { version = "0.37", default-features = false }
+# Type for the plates over the mons' heads, drawn into pixels by hand.
+fontdue = "0.9"
+# The icon by the clock and its menu.
+tray-icon = "0.21"
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu = { version = "30", default-features = false, features = ["metal"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+wgpu = { version = "30", default-features = false, features = ["dx12"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_Accessibility",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
