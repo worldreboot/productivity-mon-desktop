@@ -27,7 +27,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: rust-cache
         with:
           path: |
             ~/.cargo/registry
@@ -37,13 +38,32 @@ jobs:
       - name: Test platform and shared code
         run: cargo test --locked --all-targets --all-features --manifest-path desk/app/Cargo.toml --target aarch64-apple-darwin
       - name: Build Apple Silicon executable
+        id: native-build
         run: cargo build --locked --release --manifest-path desk/app/Cargo.toml --target aarch64-apple-darwin
+      - uses: actions/cache/save@v4
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desk/app/target
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
       - name: Verify native executable
         run: |
           file desk/app/target/aarch64-apple-darwin/release/desk-mons
-          lipo -verify_arch arm64 desk/app/target/aarch64-apple-darwin/release/desk-mons
+          lipo desk/app/target/aarch64-apple-darwin/release/desk-mons -verify_arch arm64
           otool -L desk/app/target/aarch64-apple-darwin/release/desk-mons
+      - name: Check Metal and signed-out native launch
+        run: python3 desk/macos/smoke.py
+      - name: Upload native smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProductivityMon-mac-smoke-report
+          path: mac-smoke.json
+          if-no-files-found: warn
       - name: Upload development executable
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: ProductivityMon-apple-silicon-development
