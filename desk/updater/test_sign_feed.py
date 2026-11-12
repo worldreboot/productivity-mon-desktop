@@ -16,7 +16,9 @@ class SigningTests(unittest.TestCase):
         for name,valid in [('models/pm0001/model.mon',True),('icons/1.png',True),('models/../../escaped',False),('models/bad\\path',False)]:
             with tempfile.TemporaryDirectory() as temporary:
                 data=io.BytesIO()
-                with zipfile.ZipFile(data,'w') as archive: archive.writestr(prefix+name,b'fixture')
+                entry=zipfile.ZipInfo('safe')
+                entry.filename=prefix+name
+                with zipfile.ZipFile(data,'w') as archive: archive.writestr(entry,b'fixture')
                 data.seek(0)
                 with zipfile.ZipFile(data) as archive:
                     if valid:

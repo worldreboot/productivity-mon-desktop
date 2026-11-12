@@ -10,9 +10,11 @@ from pathlib import Path, PurePosixPath
 def extract_assets(zipped, output):
     prefix = 'ProductivityMon.app/Contents/Resources/'
     for entry in zipped.infolist():
-        if not entry.filename.startswith((prefix + 'models/', prefix + 'icons/')) or entry.is_dir():
+        # ZipInfo.filename may normalize backslashes on Windows; validate its original spelling.
+        raw = entry.orig_filename
+        if not raw.startswith((prefix + 'models/', prefix + 'icons/')) or entry.is_dir():
             continue
-        name = entry.filename[len(prefix):]
+        name = raw[len(prefix):]
         relative = PurePosixPath(name)
         if relative.is_absolute() or '..' in relative.parts or '\\' in name:
             raise ValueError('Unsafe archive path')
