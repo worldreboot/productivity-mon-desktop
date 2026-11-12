@@ -61,6 +61,7 @@ jobs:
         with:
           workspaces: desk/app
           key: updater-${{ matrix.target }}
+          cache-on-failure: true
       - name: Install pinned packager and signing library
         shell: bash
         run: |

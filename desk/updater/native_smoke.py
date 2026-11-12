@@ -43,6 +43,7 @@ def run(executable, work, vpk='vpk'):
             app = app.with_name(app.name + '.app')
             destination = app / 'Contents/MacOS'
             destination.mkdir(parents=True)
+            (app / 'Contents/Resources').mkdir()
             with (app / 'Contents/Info.plist').open('wb') as file:
                 plistlib.dump({'CFBundleIdentifier': 'com.productivitymon.updater-fixture', 'CFBundleName': 'ProductivityMon',
                               'CFBundleExecutable': 'update_fixture', 'CFBundlePackageType': 'APPL', 'CFBundleVersion': version,
