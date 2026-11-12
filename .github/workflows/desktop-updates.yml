@@ -68,6 +68,8 @@ jobs:
           python -m pip install 'cryptography==46.0.3'
       - name: Test desktop and updater security
         run: cargo test --locked --all-targets --all-features --manifest-path desk/app/Cargo.toml --target ${{ matrix.target }}
+      - name: Test release signing refuses altered packages
+        run: python -m unittest discover -s desk/updater -p test_*.py
       - name: Build native updater probe
         run: cargo build --locked --release --example update_fixture --manifest-path desk/app/Cargo.toml --target ${{ matrix.target }}
       - name: Test install, rejection, update and relaunch

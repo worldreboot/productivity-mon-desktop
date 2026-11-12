@@ -19,6 +19,9 @@ def publish(directory, version):
         gh('release', 'create', TAG, '--prerelease', '--title', 'ProductivityMon desktop alpha', '--notes', 'Windows and experimental Apple Silicon alpha. Install once to enable signed automatic updates.')
         release = {'assets': []}
     existing = {asset['name'] for asset in release['assets']}
+    for path in directory.iterdir():
+        if path.suffix in ('.nupkg', '.exe', '.zip') and version in path.name and path.name in existing:
+            raise ValueError('This version already has published files. Use a new increasing version; immutable binaries are never replaced.')
     manifests = []
     for platform, pattern in [('windows', f'ProductivityMon-{version}-windows-Setup.exe'), ('macos', f'ProductivityMon-{version}-apple-silicon.zip')]:
         path = directory / pattern
