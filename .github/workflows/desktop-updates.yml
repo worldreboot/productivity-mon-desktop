@@ -96,6 +96,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.publish
         shell: bash
         run: |
+          python desk/updater/prepare_previous.py updater-release --channel '${{ matrix.channel }}'
           python desk/updater/package.py --platform '${{ matrix.platform }}' --version "$PRODUCTIVITYMON_VERSION" --executable 'desk/app/target/${{ matrix.target }}/release/${{ matrix.executable }}' --assets updater-assets --output updater-release
       - name: Sign verified update feed
         if: github.event_name == 'workflow_dispatch' && inputs.publish

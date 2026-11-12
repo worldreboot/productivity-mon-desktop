@@ -654,7 +654,8 @@ impl App {
     }
 
     fn poll_exit(&mut self,event_loop:&ActiveEventLoop) {
-        let (changed,exit)=self.updater.poll();
+        let (changed,exit,restart_pending)=self.updater.poll();
+        if restart_pending {self.begin_exit(true);}
         if changed {
             if let Some(panel)=&self.panel {panel.window.request_redraw();}
             if let Some(tray)=&self.tray {

@@ -33,6 +33,7 @@ enum Command {
 pub enum Event {
     Status(Status),
     Exit,
+    RestartPending,
 }
 pub struct Updater {
     commands: Option<Sender<Command>>,
@@ -83,9 +84,10 @@ impl Updater {
         }
     }
     /// Returns true only after the helper has successfully started and is waiting for this process to exit.
-    pub fn poll(&mut self) -> (bool, bool) {
+    pub fn poll(&mut self) -> (bool, bool, bool) {
         let mut changed = false;
         let mut exit = false;
+        let mut restart_pending = false;
         while let Ok(event) = self.events.try_recv() {
             match event {
                 Event::Status(status) => {
@@ -93,9 +95,10 @@ impl Updater {
                     changed = true;
                 }
                 Event::Exit => exit = true,
+                Event::RestartPending => restart_pending = true,
             }
         }
-        (changed, exit)
+        (changed, exit, restart_pending)
     }
 }
 
@@ -106,6 +109,10 @@ fn run(manager: UpdateManager, rx: Receiver<Command>, tx: Sender<Event>, wake: i
         wake();
     };
     let mut pending: Option<Box<UpdateInfo>> = None;
+    // A previously downloaded package may finish on the next launch, after fresh signature/hash checks.
+    let mut cached_at_launch = manager
+        .get_update_pending_restart()
+        .map(|asset| asset.FileName);
     let mut next = Duration::ZERO;
     loop {
         let command = match rx.recv_timeout(next) {
@@ -151,12 +158,16 @@ fn run(manager: UpdateManager, rx: Receiver<Command>, tx: Sender<Event>, wake: i
                             let paths = locator::auto_locate_app_manifest(
                                 locator::LocationContext::Unknown,
                             )?;
-                            source::verify_package(
-                                &paths
-                                    .get_packages_dir()
-                                    .join(&update.TargetFullRelease.FileName),
-                                &update.TargetFullRelease,
-                            )?;
+                            let cached = paths
+                                .get_packages_dir()
+                                .join(&update.TargetFullRelease.FileName);
+                            if let Err(error) =
+                                source::verify_package(&cached, &update.TargetFullRelease)
+                            {
+                                // Existing cached files are skipped by Velopack. Retry with a clean download later.
+                                let _ = std::fs::remove_file(cached);
+                                return Err(error);
+                            }
                             let mut status = Status::new(
                                 "ready",
                                 current.clone(),
@@ -165,7 +176,13 @@ fn run(manager: UpdateManager, rx: Receiver<Command>, tx: Sender<Event>, wake: i
                             status.version = version;
                             status.progress = 100;
                             send(status);
+                            let finish_on_launch = cached_at_launch.take().as_ref()
+                                == Some(&update.TargetFullRelease.FileName);
                             pending = Some(update);
+                            if finish_on_launch {
+                                let _ = tx.send(Event::RestartPending);
+                                wake();
+                            }
                         }
                         _ => send(Status::new(
                             "current",
