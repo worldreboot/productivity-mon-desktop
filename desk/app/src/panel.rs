@@ -39,6 +39,8 @@ pub enum Act {
     EndSession(bool),
     /// The server's page, in the browser.
     Page,
+    /// The public support and community server, without account credentials.
+    Community,
     /// macOS: ask the user for browser-window Accessibility access.
     EnableWebsiteTracking,
     /// A program (its file name) or a site (`site:<name>`) to be never reported from now on, or reported again.
@@ -720,6 +722,9 @@ fn app_page(ui: &mut egui::Ui, switches: &[(&'static str, &'static str, bool)], 
         ui.label(egui::RichText::new("Your signed-in account keeps your mons across PCs.").color(look::FAINT).small());
         if ui.button("Open the web page").clicked() {
             acts.push(Act::Page);
+        }
+        if ui.button("Join our Discord").on_hover_text("Get help, report bugs, and suggest features.").clicked() {
+            acts.push(Act::Community);
         }
     });
 }

@@ -10,6 +10,7 @@ pub struct Tray {
     status: MenuItem,
     pub panel: MenuItem,
     pub page: MenuItem,
+    pub community: MenuItem,
     pub hide: CheckMenuItem,
     pub track: CheckMenuItem,
     pub taskbar: CheckMenuItem,
@@ -25,6 +26,7 @@ impl Tray {
         let status = MenuItem::new("Not signed in yet", false, None);
         let panel = MenuItem::new("Open ProductivityMon", true, None);
         let page = MenuItem::new("Open the web page", true, None);
+        let community = MenuItem::new("Join our Discord", true, None);
         let hide = CheckMenuItem::new("Hide the mons", true, false, None);
         let track = CheckMenuItem::new("Pause tracking", true, false, None);
         let taskbar = CheckMenuItem::new("Names and levels on the taskbar", crate::desk::supports_taskbar(), taskbar, None);
@@ -33,7 +35,7 @@ impl Tray {
         let startup = CheckMenuItem::new(crate::desk::STARTUP_LABEL, true, startup, None);
         let quit = MenuItem::new("Quit", true, None);
         let menu = Menu::new();
-        menu.append_items(&[&status, &PredefinedMenuItem::separator(), &panel, &page, &hide, &taskbar, &board, &sounds, &track, &startup, &PredefinedMenuItem::separator(), &quit]).map_err(|e| e.to_string())?;
+        menu.append_items(&[&status, &PredefinedMenuItem::separator(), &panel, &page, &community, &hide, &taskbar, &board, &sounds, &track, &startup, &PredefinedMenuItem::separator(), &quit]).map_err(|e| e.to_string())?;
         let icon = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             // A left click opens the panel; the menu is the right click's.
@@ -42,7 +44,7 @@ impl Tray {
             .with_icon(Icon::from_rgba(crate::app_icon::tray_pixels(), 32, 32).map_err(|e| e.to_string())?)
             .build()
             .map_err(|e| e.to_string())?;
-        Ok(Tray { icon, status, panel, page, hide, track, taskbar, board, sounds, startup, quit })
+        Ok(Tray { icon, status, panel, page, community, hide, track, taskbar, board, sounds, startup, quit })
     }
 
     /// Says what the account has, in the menu and when the mouse rests on the icon.

@@ -55,6 +55,8 @@ use wild::{Done, Outcome, Phase, Wild};
 
 /// Frames a second while any mon walks, falls or is carried, and while all of them only stand and breathe.
 const MOVING_FPS: f64 = 30.0;
+/// A stable public redirect lets community invites change without rebuilding the app.
+const COMMUNITY_URL: &str = "https://productivitymon.com/discord";
 const STANDING_FPS: f64 = 15.0;
 /// How long nobody has to touch the keyboard or mouse for the mons to stop being drawn, in seconds.
 const ASLEEP_AFTER: f32 = 180.0;
@@ -1441,6 +1443,10 @@ impl App {
                     self.open_page();
                     None
                 }
+                panel::Act::Community => {
+                    desk::open(COMMUNITY_URL);
+                    None
+                }
                 // At the wild mon on the desktop if it is there, so that the ball is seen; else just asked of the server.
                 panel::Act::Throw(ball) => {
                     let id = self.state["encounter"]["id"].as_str().unwrap_or_default().to_string();
@@ -1528,6 +1534,8 @@ impl ApplicationHandler<Poke> for App {
             event_loop.exit();
         } else if id == *tray.page.id() {
             self.open_page();
+        } else if id == *tray.community.id() {
+            desk::open(COMMUNITY_URL);
         } else if id == *tray.hide.id() {
             self.paused = tray.hide.is_checked();
         } else if id == *tray.taskbar.id() {
