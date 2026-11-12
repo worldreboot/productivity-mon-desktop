@@ -8,6 +8,7 @@ pub fn frame(ctx: &egui::Context, page: &str, view: &View, icons: &HashMap<u64, 
         page if page.starts_with("pokedex") => Tab::Dex,
         "social" => Tab::Ranks,
         "privacy" => Tab::Programs,
+        page if page.starts_with("updates") => Tab::App,
         _ => Tab::Today,
     };
     let (mut naming, mut keeping, mut lure, mut adding, mut trading) = (None, String::new(), 0, String::new(), None);

@@ -62,7 +62,7 @@ fn main() {
     }
     let format = wgpu::TextureFormat::Rgba8Unorm;
     let mut renderer = egui_wgpu::Renderer::new(&gpu.device,format,egui_wgpu::RendererOptions::default());
-    for page in ["welcome","focus","mons","mons-shiny","shop","shop-active","pokedex","pokedex-caught","pokedex-seen","pokedex-unseen","pokedex-search","pokedex-empty","social","privacy"] {
+    for page in ["welcome","focus","mons","mons-shiny","shop","shop-active","pokedex","pokedex-caught","pokedex-seen","pokedex-unseen","pokedex-search","pokedex-empty","social","privacy","updates-ready","updates-downloading","updates-error"] {
         if selected_page.as_deref().is_some_and(|selected| selected != page) { continue; }
         let mut state=state.clone();
         if page=="mons-shiny" {
@@ -71,7 +71,11 @@ fn main() {
             state["mons"][0]["types"]=json!(["fire","flying"]);state["mons"][0]["level"]=json!(36);
         }
         if page=="shop-active" { state["lure"]=json!({"kind":"max-lure","name":"Max Lure","remainingSeconds":2520.0,"totalSeconds":15000.0}); }
-        let status = if page=="privacy" {json!({"online":true,"program":null,"class":null,"paused":true,"idle":false,"excluded":false,"syncAge":2,"nextReport":32})} else {status.clone()};
+        let mut status = if page=="privacy" {json!({"online":true,"program":null,"class":null,"paused":true,"idle":false,"excluded":false,"syncAge":2,"nextReport":32})} else {status.clone()};
+        if page.starts_with("updates") {
+            let (phase,message)=match page {"updates-ready"=>("ready","Ready to install when you restart or quit."),"updates-downloading"=>("downloading","Downloading in the background…"),_=>("error","Couldn’t update. Your current version still works. Try again later.")};
+            status["update"]=json!({"phase":phase,"current":"0.1.0-alpha.9","version":"0.1.0-alpha.10","progress":42,"message":message});
+        }
         let switches = [("track","Pause tracking",page=="privacy"),("hide","Hide mons",false)];
         let view = panel::View {state:&state,status:&status,account:true,note:"",sites:&sites,private:&private,social:&social,theirs:&empty,ranks:&ranks,earning:&earning,switches:&switches};
         // egui lays out some panels on the first frame; retain textures and render its settled frame.

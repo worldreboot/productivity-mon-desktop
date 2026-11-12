@@ -651,6 +651,7 @@ impl App {
         self.ending=Some(saved);
         self.exit_mode=Some(restart);
         self.note="Saving activity…".into();self.next=Instant::now();
+        if let Some(panel)=&self.panel {panel.window.request_redraw();}
     }
 
     fn poll_exit(&mut self,event_loop:&ActiveEventLoop) {
@@ -673,6 +674,7 @@ impl App {
             Err(_)=>Some(Err("Could not save activity before closing. Please try again.".into()))});
         if let Some(result)=result {
             self.ending=None;
+            if let Some(panel)=&self.panel {panel.window.request_redraw();}
             match result {
                 Err(error)=>{self.exit_mode=None;self.note=error;self.tracked_at=desk::ticks();},
                 Ok(())=>{
