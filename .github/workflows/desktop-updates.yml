@@ -1,0 +1,133 @@
+name: Desktop updates
+on:
+  push:
+    branches: ['codex/desktop-auto-updates']
+    paths: ['desk/app/**', 'desk/updater/**', 'desk/macos/**', '.github/workflows/desktop-updates.yml']
+  pull_request:
+    paths: ['desk/app/**', 'desk/updater/**', 'desk/macos/**', '.github/workflows/desktop-updates.yml']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Increasing alpha version (both platforms)'
+        required: true
+        default: '0.1.0-alpha.9'
+      publish:
+        description: 'Publish both installers and signed update feeds after native acceptance tests'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: desktop-updates-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            channel: win-alpha
+            target: x86_64-pc-windows-msvc
+            executable: desk-mons.exe
+            fixture: update_fixture.exe
+          - os: macos-15
+            platform: macos
+            channel: osx-alpha
+            target: aarch64-apple-darwin
+            executable: desk-mons
+            fixture: update_fixture
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      PRODUCTIVITYMON_VERSION: ${{ inputs.version || '0.1.0-alpha.9' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desk/app
+          key: updater-${{ matrix.target }}
+      - name: Install pinned packager and signing library
+        shell: bash
+        run: |
+          dotnet tool install --global vpk --version 1.2.161
+          python -m pip install 'cryptography==46.0.3'
+      - name: Test desktop and updater security
+        run: cargo test --locked --all-targets --all-features --manifest-path desk/app/Cargo.toml --target ${{ matrix.target }}
+      - name: Build native updater probe
+        run: cargo build --locked --release --example update_fixture --manifest-path desk/app/Cargo.toml --target ${{ matrix.target }}
+      - name: Test install, rejection, update and relaunch
+        run: python desk/updater/native_smoke.py --executable desk/app/target/${{ matrix.target }}/release/examples/${{ matrix.fixture }} --work updater-native-test
+      - name: Upload acceptance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-smoke-${{ matrix.channel }}
+          path: updater-smoke-*.json
+          if-no-files-found: warn
+      - name: Build desktop executable
+        run: cargo build --locked --release --manifest-path desk/app/Cargo.toml --target ${{ matrix.target }}
+      - name: Native Mac rendering smoke
+        if: matrix.platform == 'macos'
+        run: python desk/macos/smoke.py
+      - name: Upload development executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-development-${{ matrix.channel }}
+          path: desk/app/target/${{ matrix.target }}/release/${{ matrix.executable }}
+      - name: Prepare verified companion assets
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        run: python desk/updater/prepare_assets.py updater-assets
+      - name: Package release
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        shell: bash
+        run: |
+          python desk/updater/package.py --platform '${{ matrix.platform }}' --version "$PRODUCTIVITYMON_VERSION" --executable 'desk/app/target/${{ matrix.target }}/release/${{ matrix.executable }}' --assets updater-assets --output updater-release
+      - name: Sign verified update feed
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        env:
+          PRODUCTIVITYMON_UPDATE_SIGNING_KEY: ${{ secrets.PRODUCTIVITYMON_UPDATE_SIGNING_KEY }}
+        run: python desk/updater/sign_feed.py updater-release --channel ${{ matrix.channel }}
+      - name: Upload release files
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-update-${{ matrix.channel }}
+          compression-level: 0
+          path: |
+            updater-release/*.nupkg
+            updater-release/*.exe
+            updater-release/*.zip
+            updater-release/*.signed.json
+          if-no-files-found: error
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-update-*
+          path: release-files
+          merge-multiple: true
+      - name: Publish packages before switching the update feeds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python desk/updater/publish.py release-files --version '${{ inputs.version }}'

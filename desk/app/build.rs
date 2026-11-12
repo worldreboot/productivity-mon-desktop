@@ -1,4 +1,7 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=PRODUCTIVITYMON_VERSION");
+    let version=std::env::var("PRODUCTIVITYMON_VERSION").unwrap_or_else(|_|std::env::var("CARGO_PKG_VERSION").unwrap());
+    println!("cargo:rustc-env=PRODUCTIVITYMON_VERSION={version}");
     println!("cargo:rerun-if-changed=src/desk/macos.m");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref()==Ok("macos") {
         if std::env::var("HOST").unwrap_or_default().contains("apple-darwin") {

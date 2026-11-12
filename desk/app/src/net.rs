@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 mod outbox;
+pub fn keep_report(home:&std::path::Path,owner:&str,report:&str)->std::io::Result<()> {outbox::append(home,owner,report)}
 
 /// How often the account's state is asked for anew, in seconds: the lists and the desk are changed on the web page.
 const STATE_EVERY: f32 = 30.0;
@@ -16,7 +17,7 @@ const STATE_EVERY: f32 = 30.0;
 const SORTED_AFTER: f32 = 8.0;
 /// How long before trying again when the server cannot be reached, in seconds.
 const RETRY_AFTER: f32 = 30.0;
-const VERSION: &str = "0.1.0-alpha.7";
+const VERSION: &str = env!("PRODUCTIVITYMON_VERSION");
 
 /// What the app asks of the thread.
 pub enum Ask {
@@ -26,6 +27,8 @@ pub enum Ask {
     Report(String, String),
     /// Save the last partial report, then clear this desktop session. True opens account selection.
     EndSession(bool, Option<(String, String)>),
+    /// Acknowledge only after the last partial report and all queued reports are saved locally.
+    Flush(Option<(String, String)>, Sender<Result<(), String>>),
     /// A page in a browser, by its title, to be found productive, neutral or distracting.
     Page(String),
     /// A ball thrown at the encounter with this id, and which kind of ball: `ball`, `great` or `ultra`.
@@ -224,6 +227,11 @@ impl Net {
         Ok(())
     }
 
+    fn flush(&mut self, report: Option<(String,String)>) -> Result<(),String> {
+        if let Some(report)=report {self.unsaved.push(report);}
+        self.persist_reports().map_err(|error|format!("Could not save pending activity: {error}"))
+    }
+
     fn end_session(&mut self, switch: bool, report: Option<(String,String)>, device: uuid::Uuid) -> Result<bool,String> {
         if let Some((account,report))=report {self.enqueue(account,report);}
         self.persist_reports().map_err(|error|format!("Could not save pending activity. You are still signed in: {error}"))?;
@@ -362,7 +370,7 @@ pub fn run(link: Link, asks: Receiver<Ask>, told: Sender<Told>) {
             }
         };
         match asks.recv_timeout(Duration::from_secs_f32(wait.max(0.05))) {
-            Ok(ref ask) if net.token.is_none() && !matches!(ask,Ask::Link(..)|Ask::EndSession(..)|Ask::Report(..)|Ask::Refresh|Ask::Quit) => {},
+            Ok(ref ask) if net.token.is_none() && !matches!(ask,Ask::Link(..)|Ask::EndSession(..)|Ask::Flush(..)|Ask::Report(..)|Ask::Refresh|Ask::Quit) => {},
             Ok(Ask::EndSession(switch,report)) => {
                 let result=net.end_session(switch,report,device);
                 net.tell(Told::SessionEnded(result));
@@ -378,6 +386,9 @@ pub fn run(link: Link, asks: Receiver<Ask>, told: Sender<Told>) {
                     }
                 }
             }
+            Ok(Ask::Flush(report, reply)) => {
+                let _=reply.send(net.flush(report));
+            },
             Ok(Ask::Report(account,report)) => net.enqueue(account,report),
             Ok(Ask::Page(title)) => {
                 // Unanswered (no sorter, no server) it is nobody-could-say: the page counts as its browser does.
@@ -510,6 +521,24 @@ pub fn run(link: Link, asks: Receiver<Ask>, told: Sender<Told>) {
 mod session_tests {
     use super::*;
     use std::io::{BufRead,Read,Write};
+    #[test]
+    fn update_barrier_saves_partial_and_queued_activity_without_signing_out() {
+        let mut net=client("http://127.0.0.1:1".into());let owner=uuid::Uuid::new_v4().to_string();
+        std::fs::write(net.link.home.join("token"),"fixture-token").unwrap();
+        net.unsaved.push((owner.clone(),"queued".into()));
+        net.flush(Some((owner.clone(),"partial-minute".into()))).unwrap();
+        let path=outbox::batches(&net.link.home,&owner).unwrap().remove(0);
+        assert_eq!(std::fs::read_to_string(path).unwrap(),"queued\npartial-minute\n");
+        assert_eq!(std::fs::read_to_string(net.link.home.join("token")).unwrap(),"fixture-token");
+        assert!(net.unsaved.is_empty());std::fs::remove_dir_all(&net.link.home).unwrap();
+    }
+    #[test]
+    fn failed_update_barrier_retains_activity_and_blocks_restart() {
+        let mut net=client("http://127.0.0.1:1".into());let owner=uuid::Uuid::new_v4().to_string();
+        std::fs::write(net.link.home.join("pending-reports"),"not a directory").unwrap();
+        assert!(net.flush(Some((owner,"partial-minute".into()))).is_err());
+        assert_eq!(net.unsaved.len(),1);assert!(net.token.is_some());std::fs::remove_dir_all(&net.link.home).unwrap();
+    }
     fn client(server: String) -> Net {
         let home=std::env::temp_dir().join(format!("productivitymon-session-{}",uuid::Uuid::new_v4()));
         std::fs::create_dir(&home).unwrap();let(told,_)=std::sync::mpsc::channel();

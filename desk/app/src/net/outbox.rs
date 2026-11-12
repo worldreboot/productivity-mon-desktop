@@ -10,7 +10,8 @@ pub fn append(home: &Path, account: &str, report: &str) -> io::Result<()> {
     let directory = folder(home, account)?;
     fs::create_dir_all(&directory)?;
     let mut file = fs::OpenOptions::new().create(true).append(true).open(directory.join("1-active.jsonl"))?;
-    writeln!(file, "{report}")
+    writeln!(file, "{report}")?;
+    file.sync_all()
 }
 
 pub fn batches(home: &Path, account: &str) -> io::Result<Vec<PathBuf>> {

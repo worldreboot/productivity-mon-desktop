@@ -41,6 +41,8 @@ pub enum Act {
     Page,
     /// The public support and community server, without account credentials.
     Community,
+    CheckUpdates,
+    RestartUpdate,
     /// macOS: ask the user for browser-window Accessibility access.
     EnableWebsiteTracking,
     /// A program (its file name) or a site (`site:<name>`) to be never reported from now on, or reported again.
@@ -398,6 +400,16 @@ impl Panel {
         let activity_icons = &mut self.activity_icons;
         let output = self.ctx.run_ui(raw, |ui| {
             egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::same(18)).show(ui, |ui| {
+                if view.status["savingForExit"]==true {
+                    ui.horizontal(|ui|{ui.spinner();ui.label("Saving activity and closing safely…");});return;
+                }
+                if view.status["update"]["phase"]=="ready" {
+                    look::marked(ui,look::GOLD,|ui|ui.horizontal_wrapped(|ui|{
+                        ui.label("App update ready");
+                        if ui.small_button("Restart").clicked(){acts.push(Act::RestartUpdate);}
+                    }));
+                    ui.add_space(6.0);
+                }
                 if !view.account {
                     if view.status["accountChanging"]==true {
                         ui.heading("Signing out of this desktop…");ui.spinner();ui.label("Saving pending activity for your current account.");
@@ -613,7 +625,7 @@ fn account(ui: &mut egui::Ui, view: &View, icons: &HashMap<u64, egui::TextureHan
         Tab::Shop => look::card(ui, |ui| shop(ui, state, lure, acts)),
         Tab::Ranks => look::card(ui, |ui| ranks(ui, state, view.ranks, icons, ranking)),
         Tab::Friends => look::card(ui, |ui| friends(ui, state, view.social, view.theirs, icons, adding, trading, acts)),
-        Tab::App => app_page(ui, view.switches, acts),
+        Tab::App => app_page(ui, view.switches, &view.status["update"], acts),
     });
 }
 
@@ -705,7 +717,22 @@ fn tracking_status(ui: &mut egui::Ui, view: &View, activity_icons: &mut crate::a
 }
 
 /// The app's own switches, which the icon by the clock has in its menu too, and the way to the web page.
-fn app_page(ui: &mut egui::Ui, switches: &[(&'static str, &'static str, bool)], acts: &mut Vec<Act>) {
+fn app_page(ui: &mut egui::Ui, switches: &[(&'static str, &'static str, bool)], update: &Value, acts: &mut Vec<Act>) {
+    look::card(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.strong("App updates");
+            if let Some(version)=update["current"].as_str().filter(|v|!v.is_empty()) {ui.label(egui::RichText::new(version).small().color(look::FAINT));}
+        });
+        ui.label(egui::RichText::new(update["message"].as_str().unwrap_or("Automatic updates are available in the new installer.")).small().color(look::FAINT));
+        match update["phase"].as_str().unwrap_or("unavailable") {
+            "downloading"=>{ui.add(egui::ProgressBar::new(update["progress"].as_f64().unwrap_or(0.0) as f32/100.0).show_percentage());},
+            "ready"=>{if ui.button(format!("Restart to update · {}",update["version"].as_str().unwrap_or(""))).clicked(){acts.push(Act::RestartUpdate);}},
+            "checking"|"installing"=>{ui.spinner();},
+            "unavailable"=>{},
+            _=>{if ui.button("Check for updates").clicked(){acts.push(Act::CheckUpdates);}},
+        }
+    });
+    ui.add_space(6.0);
     look::card(ui, |ui| {
         ui.strong("Preferences");
         for (key, says, on) in switches {

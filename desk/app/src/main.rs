@@ -33,6 +33,7 @@ mod toss;
 mod track;
 mod tray;
 mod wild;
+mod updates;
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -610,6 +611,10 @@ struct App {
     state: serde_json::Value,
     account: bool,
     account_changing: bool,
+    updater: updates::Updater,
+    ending: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
+    /// Some(true) restarts after updating; Some(false) updates on quit without reopening.
+    exit_mode: Option<bool>,
     note: String,
     /// Balls the account has to throw, as the server last said, and the ball's own model.
     balls: i64,
@@ -624,6 +629,59 @@ struct App {
 }
 
 impl App {
+    fn begin_exit(&mut self, restart: bool) {
+        if self.exit_mode.is_some() || self.account_changing { return; }
+        if restart && !self.updater.ready() { return; }
+        self.track();
+        self.keep_settings();
+        let (reply,saved)=std::sync::mpsc::channel();
+        let report=self.take_report();
+        if let Some(asks)=&self.asks {
+            // This follows earlier reports in the same FIFO queue; acknowledgment requires durable local storage.
+            if let Err(error)=asks.send(net::Ask::Flush(report,reply)) {
+                if let net::Ask::Flush(Some((owner,report)),_)=error.0 {
+                    if let Err(error)=net::keep_report(&self.home,&owner,&report) {self.note=format!("Could not save activity: {error}");return;}
+                }
+                self.note="The connection thread stopped. Activity was saved; please try closing again.".into();return;
+            }
+        } else {
+            let result=report.map_or(Ok(()),|(owner,report)|net::keep_report(&self.home,&owner,&report)).map_err(|e|e.to_string());
+            let _=reply.send(result);
+        }
+        self.ending=Some(saved);
+        self.exit_mode=Some(restart);
+        self.note="Saving activity…".into();self.next=Instant::now();
+    }
+
+    fn poll_exit(&mut self,event_loop:&ActiveEventLoop) {
+        let (changed,exit)=self.updater.poll();
+        if changed {
+            if let Some(panel)=&self.panel {panel.window.request_redraw();}
+            if let Some(tray)=&self.tray {
+                let status=&self.updater.status;
+                tray.update.set_text(match status.phase {"ready"=>"Update ready — restart", "checking"=>"Checking for updates…", "downloading"=>"Downloading update…", "installing"=>"Installing update…",_=>"Check for updates"});
+                tray.update.set_enabled(!matches!(status.phase,"unavailable"|"checking"|"downloading"|"installing"));
+            }
+            if self.updater.status.phase=="error" && self.exit_mode.is_some() && self.ending.is_none() {
+                self.exit_mode=None;self.note=self.updater.status.message.clone();self.tracked_at=desk::ticks();
+            }
+        }
+        if exit {if let Some(asks)=&self.asks {let _=asks.send(net::Ask::Quit);}event_loop.exit();return;}
+        let result=self.ending.as_ref().and_then(|saved|match saved.try_recv(){
+            Ok(result)=>Some(result),Err(std::sync::mpsc::TryRecvError::Empty)=>None,
+            Err(_)=>Some(Err("Could not save activity before closing. Please try again.".into()))});
+        if let Some(result)=result {
+            self.ending=None;
+            match result {
+                Err(error)=>{self.exit_mode=None;self.note=error;self.tracked_at=desk::ticks();},
+                Ok(())=>{
+                    if self.updater.ready() {self.updater.install(self.exit_mode==Some(true));}
+                    else {if let Some(asks)=&self.asks {let _=asks.send(net::Ask::Quit);}event_loop.exit();}
+                }
+            }
+        }
+    }
+
     fn take_report(&mut self) -> Option<(String,String)> {
         if !self.tracker.any() && self.idle < 1.0 {return None;}
         let owner=self.state["account"]["id"].as_str().map(str::to_string)
@@ -1386,7 +1444,7 @@ impl App {
     /// Does what was pressed in the panel.
     fn act(&mut self, acts: Vec<panel::Act>) {
         for act in acts {
-            if self.account_changing {return;}
+            if self.account_changing || self.exit_mode.is_some() {return;}
             let ask = match act {
                 panel::Act::EndSession(switch) => {
                     self.track();let report=self.take_report();
@@ -1447,6 +1505,8 @@ impl App {
                     desk::open(COMMUNITY_URL);
                     None
                 }
+                panel::Act::CheckUpdates => {self.updater.check();None},
+                panel::Act::RestartUpdate => {self.begin_exit(true);return;},
                 // At the wild mon on the desktop if it is there, so that the ball is seen; else just asked of the server.
                 panel::Act::Throw(ball) => {
                     let id = self.state["encounter"]["id"].as_str().unwrap_or_default().to_string();
@@ -1528,10 +1588,9 @@ impl ApplicationHandler<Poke> for App {
         }
         let Some(tray) = &self.tray else { return };
         if id == *tray.quit.id() {
-            if let Some(asks) = &self.asks {
-                let _ = asks.send(net::Ask::Quit);
-            }
-            event_loop.exit();
+            self.begin_exit(false);
+        } else if id == *tray.update.id() {
+            if self.updater.ready() {self.begin_exit(true);} else {self.updater.check();}
         } else if id == *tray.page.id() {
             self.open_page();
         } else if id == *tray.community.id() {
@@ -1650,6 +1709,8 @@ impl ApplicationHandler<Poke> for App {
             }
             Err(error) => eprintln!("[desk] no icon by the clock: {error}"),
         }
+        // Refresh an existing login entry after migration from the legacy installer or an app move.
+        if desk::startup_enabled() {self.startup_change(true);}
         self.started = true;
     }
 
@@ -1715,6 +1776,8 @@ impl ApplicationHandler<Poke> for App {
                     panel_status["online"] = serde_json::json!(self.server_seen.is_some_and(|at|at.elapsed() <= Duration::from_secs(45)) && !self.server_away);
                     panel_status["accessibilityRequired"]=serde_json::json!(desk::accessibility_needed());
                     panel_status["accountChanging"]=serde_json::json!(self.account_changing);
+                    panel_status["update"]=serde_json::to_value(&self.updater.status).unwrap_or_default();
+                    panel_status["savingForExit"]=serde_json::json!(self.exit_mode.is_some());
                     panel_status["lastClassification"]=if !self.untracked && !self.excluded {self.tracker.previous_classification().map(|(program,site,class)|serde_json::json!({"program":program,"site":site,"class":class.map(|class|["productive","neutral","distracting"][class as usize])})).unwrap_or_default()} else {serde_json::Value::Null};
                     panel_status["site"]=if !self.untracked && !self.excluded {self.tracker.now().and_then(|(what,_)|track::site_of(&what)).map(serde_json::Value::String).unwrap_or_default()} else {serde_json::Value::Null};
                     panel_status["syncAge"] = self.server_seen.map(|at|serde_json::json!(at.elapsed().as_secs())).unwrap_or(serde_json::Value::Null);
@@ -1864,6 +1927,9 @@ impl App {
         if !self.started || event_loop.exiting() {
             return;
         }
+        self.poll_exit(event_loop);
+        if event_loop.exiting() {return;}
+        if self.exit_mode.is_some() {self.next=Instant::now()+Duration::from_millis(100);event_loop.set_control_flow(ControlFlow::WaitUntil(self.next));return;}
         let now = Instant::now();
         if let Some(seconds) = self.options.seconds {
             if self.began.elapsed().as_secs_f64() >= seconds {
@@ -2100,6 +2166,8 @@ impl App {
 }
 
 fn main() {
+    // Our signed-feed layer must approve cached packages again before applying them.
+    velopack::VelopackApp::build().set_auto_apply_on_startup(false).run();
     let options = options();
     if let Some(path) = options.snap.clone() {
         return snap(&options, &path);
@@ -2110,6 +2178,8 @@ fn main() {
     let event_loop = builder.build().expect("an event loop");
     let now = Instant::now();
     let baker = bake::Baker::find(&options.models).map(Arc::new);
+    let update_proxy=event_loop.create_proxy();
+    let updater=updates::Updater::start(move ||{let _=update_proxy.send_event(Poke::Told);});
     let mut app = App {
         options,
         gpu: None,
@@ -2172,6 +2242,9 @@ fn main() {
         state: serde_json::Value::Null,
         account: false,
         account_changing: false,
+        updater,
+        ending: None,
+        exit_mode: None,
         note: String::new(),
         balls: 0,
         ball: Rc::new(Mon::ball()),
