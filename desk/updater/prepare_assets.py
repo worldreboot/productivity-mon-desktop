@@ -32,7 +32,8 @@ def prepare(output):
     expected = '952d250ee3474f3ca861030e11fc12a29a5f0d25ce2e4486069c4407e212f961'
     with tempfile.TemporaryDirectory(prefix='productivitymon-assets-') as temporary:
         archive = Path(temporary) / 'assets.zip'
-        with urllib.request.urlopen(url, timeout=180) as response, archive.open('wb') as file:
+        request = urllib.request.Request(url, headers={'User-Agent': 'ProductivityMon build workflow (+https://productivitymon.com)'})
+        with urllib.request.urlopen(request, timeout=180) as response, archive.open('wb') as file:
             shutil.copyfileobj(response, file)
         with archive.open('rb') as file:
             if hashlib.file_digest(file, 'sha256').hexdigest() != expected:

@@ -15,8 +15,12 @@ on:
         description: 'Publish both installers and signed update feeds after native acceptance tests'
         type: boolean
         default: false
+      reuse_native_run:
+        description: 'Optional successful native build run; unchanged app sources and acceptance reports are verified before reuse'
+        default: ''
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: desktop-updates-${{ github.ref }}
   cancel-in-progress: false
@@ -58,6 +62,7 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - uses: Swatinem/rust-cache@v2
+        if: inputs.reuse_native_run == ''
         with:
           workspaces: desk/app
           key: updater-${{ matrix.target }}
@@ -68,12 +73,15 @@ jobs:
           dotnet tool install --global vpk --version 1.2.161
           python -m pip install 'cryptography==46.0.3'
       - name: Test desktop and updater security
+        if: inputs.reuse_native_run == ''
         run: cargo test --locked --all-targets --all-features --manifest-path desk/app/Cargo.toml --target ${{ matrix.target }}
       - name: Test release signing refuses altered packages
         run: python -m unittest discover -s desk/updater -p test_*.py
       - name: Build native updater probe
+        if: inputs.reuse_native_run == ''
         run: cargo build --locked --release --example update_fixture --manifest-path desk/app/Cargo.toml --target ${{ matrix.target }}
       - name: Test install, rejection, update and relaunch
+        if: inputs.reuse_native_run == ''
         run: python desk/updater/native_smoke.py --executable desk/app/target/${{ matrix.target }}/release/examples/${{ matrix.fixture }} --work updater-native-test
       - name: Upload acceptance report
         if: always()
@@ -84,7 +92,15 @@ jobs:
           path: updater-smoke-*.json
           if-no-files-found: warn
       - name: Build desktop executable
+        if: inputs.reuse_native_run == ''
         run: cargo build --locked --release --manifest-path desk/app/Cargo.toml --target ${{ matrix.target }}
+      - name: Verify and reuse identical tested native build
+        if: inputs.reuse_native_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN: ${{ inputs.reuse_native_run }}
+        shell: bash
+        run: python desk/updater/reuse_build.py "$NATIVE_RUN" --channel '${{ matrix.channel }}' --output 'desk/app/target/${{ matrix.target }}/release/${{ matrix.executable }}'
       - name: Native Mac rendering smoke
         if: matrix.platform == 'macos'
         run: python desk/macos/smoke.py
