@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -16,7 +17,7 @@ def publish(directory, version):
     try:
         release = json.loads(gh('release', 'view', TAG, '--json', 'assets'))
     except subprocess.CalledProcessError:
-        gh('release', 'create', TAG, '--prerelease', '--title', 'ProductivityMon desktop alpha', '--notes', 'Windows and experimental Apple Silicon alpha. Install once to enable signed automatic updates.')
+        gh('release', 'create', TAG, '--target', os.environ['GITHUB_SHA'], '--prerelease', '--title', 'ProductivityMon desktop alpha', '--notes', 'Windows and experimental Apple Silicon alpha. Install once to enable signed automatic updates.')
         release = {'assets': []}
     existing = {asset['name'] for asset in release['assets']}
     for path in directory.iterdir():
@@ -34,6 +35,8 @@ def publish(directory, version):
                           'sha256': digest, 'bytes': path.stat().st_size, 'autoUpdate': True, 'signed': False, 'notarized': False,
                           'channel': 'alpha' if platform == 'windows' else 'experimental-alpha', 'modelCount': 952, 'shinyModelCount': 952,
                           'server': 'https://api.productivitymon.com', 'minimumMacOS': '12.0' if platform == 'macos' else None})
+        manifests[-1]['sourceCommit']=os.environ['GITHUB_SHA']
+        manifests[-1]['buildWorkflow']=f'https://github.com/{REPO}/actions/runs/' + os.environ['GITHUB_RUN_ID']
     # Never overwrite an existing version's binary. A retry only uploads missing immutable files.
     for pattern in ['*.nupkg', '*.exe', '*.zip', '*.sha256']:
         for path in directory.glob(pattern):
