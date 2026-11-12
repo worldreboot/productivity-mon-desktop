@@ -39,7 +39,10 @@ Run **Desktop updates** (`.github/workflows/desktop-updates.yml`) on `codex/desk
 increasing `0.1.0-alpha.N` version and `publish=true`. The workflow tests both native platforms, builds the
 desktop and an isolated updater probe, performs a real v1 install → unsigned-update rejection → signed v2
 download/apply/relaunch, then packages the real app and verified assets. The workflow seeds the last verified
-full package to allow Velopack to generate deltas, and signs only after recomputing every package hash.
+full package to retain the previous release in the feed, and signs only after recomputing every package hash.
+Delta delivery is disabled: the reconstructed ZIP container can differ from the published full archive,
+and the desktop client deliberately requires the exact signed archive size and SHA-256. The release signer
+also rejects delta entries so this cannot silently regress. Updates currently download the full package.
 
 Files are hosted in the public GitHub release tag `desktop-alpha`. The app fetches
 `releases.win-alpha.signed.json` or `releases.osx-alpha.signed.json`. The versioned downloads JSON contains

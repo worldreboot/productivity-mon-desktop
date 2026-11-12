@@ -46,7 +46,7 @@ def package(platform, version, executable, assets, output, vpk='vpk'):
     command = [vpk, 'pack', '--packId', 'ProductivityMon', '--packTitle', 'ProductivityMon', '--packAuthors', 'ProductivityMon',
                '--packVersion', version, '--packDir', str(app), '--mainExe', 'desk-mons.exe' if platform == 'windows' else 'desk-mons',
                '--runtime', 'win-x64' if platform == 'windows' else 'osx-arm64', '--channel', channel,
-               '--outputDir', str(output), '--icon', str(icon)]
+               '--outputDir', str(output), '--icon', str(icon), '--delta', 'None']
     if platform == 'windows':
         command += ['--shortcuts', 'StartMenuRoot', '--noPortable']
         # Optional OS code signing. Update-feed signatures are always mandatory, independently of these credentials.

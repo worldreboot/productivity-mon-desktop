@@ -40,6 +40,11 @@ class SigningTests(unittest.TestCase):
                                 'SHA256': hashlib.sha256(b'good').hexdigest(), 'Size': 4}]}
             (directory / 'releases.win-alpha.json').write_text(json.dumps(feed))
             self.assertTrue(sign(directory, 'win-alpha', private, public_file=public).is_file())
+            feed['Assets'][0]['Type']='Delta'
+            (directory / 'releases.win-alpha.json').write_text(json.dumps(feed))
+            with self.assertRaises(ValueError): sign(directory, 'win-alpha', private, public_file=public)
+            feed['Assets'][0]['Type']='Full'
+            (directory / 'releases.win-alpha.json').write_text(json.dumps(feed))
             with self.assertRaises(ValueError): sign(directory, 'win-alpha', bytes(32), public_file=public)
             package.write_bytes(b'evil')
             with self.assertRaises(ValueError): sign(directory, 'win-alpha', private, public_file=public)

@@ -27,7 +27,7 @@ def sign(directory, channel, private_bytes, *, expires=None, public_file=None):
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,199}\.nupkg', name) or '..' in name or name in names:
             raise ValueError('Unsafe or duplicate package filename')
         names.add(name)
-        if asset['PackageId'] != APP_ID or asset['Type'] not in ('Full', 'Delta'):
+        if asset['PackageId'] != APP_ID or asset['Type'] != 'Full':
             raise ValueError('Wrong package identity')
         package = directory / name
         with package.open('rb') as file:
