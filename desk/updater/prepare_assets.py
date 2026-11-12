@@ -1,20 +1,30 @@
 """Reuse the verified companion assets from the current public Mac ZIP for both native build hosts."""
 import argparse
 import hashlib
-import json
 import shutil
 import tempfile
 import urllib.request
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
-ROOT = Path(__file__).resolve().parents[2]
+def extract_assets(zipped, output):
+    prefix = 'ProductivityMon.app/Contents/Resources/'
+    for entry in zipped.infolist():
+        if not entry.filename.startswith((prefix + 'models/', prefix + 'icons/')) or entry.is_dir():
+            continue
+        name = entry.filename[len(prefix):]
+        relative = PurePosixPath(name)
+        if relative.is_absolute() or '..' in relative.parts or '\\' in name:
+            raise ValueError('Unsafe archive path')
+        destination = output.joinpath(*relative.parts)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with zipped.open(entry) as source, destination.open('xb') as target:
+            shutil.copyfileobj(source, target)
 
 def prepare(output):
     output = Path(output).resolve()
     if output.exists():
         raise ValueError('Asset output must be a new directory')
-    manifest = json.loads((ROOT / 'desk/website/public/release-mac.json').read_text())
     # Pin the known, complete asset bundle. New updater releases do not change this source implicitly.
     url = 'https://api.productivitymon.com/downloads/ProductivityMon-0.1.0-alpha.mac.2-apple-silicon.zip'
     expected = '952d250ee3474f3ca861030e11fc12a29a5f0d25ce2e4486069c4407e212f961'
@@ -27,17 +37,7 @@ def prepare(output):
                 raise ValueError('Published asset checksum does not match')
         output.mkdir(parents=True)
         with zipfile.ZipFile(archive) as zipped:
-            prefix = 'ProductivityMon.app/Contents/Resources/'
-            for entry in zipped.infolist():
-                if not entry.filename.startswith((prefix + 'models/', prefix + 'icons/')) or entry.is_dir():
-                    continue
-                relative = Path(entry.filename[len(prefix):])
-                if relative.is_absolute() or '..' in relative.parts or '\\' in str(relative):
-                    raise ValueError('Unsafe archive path')
-                destination = output / relative
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                with zipped.open(entry) as source, destination.open('xb') as target:
-                    shutil.copyfileobj(source, target)
+            extract_assets(zipped, output)
         for kind in ['models', 'icons']:
             if not (output / kind).is_dir():
                 raise ValueError('Asset archive is incomplete')

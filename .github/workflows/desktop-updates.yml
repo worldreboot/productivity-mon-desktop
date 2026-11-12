@@ -80,6 +80,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: updater-smoke-${{ matrix.channel }}
+          retention-days: 7
           path: updater-smoke-*.json
           if-no-files-found: warn
       - name: Build desktop executable
@@ -91,6 +92,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: updater-development-${{ matrix.channel }}
+          retention-days: 7
           path: desk/app/target/${{ matrix.target }}/release/${{ matrix.executable }}
       - name: Prepare verified companion assets
         if: github.event_name == 'workflow_dispatch' && inputs.publish
@@ -111,6 +113,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-update-${{ matrix.channel }}
+          retention-days: 3
           compression-level: 0
           path: |
             updater-release/*.nupkg

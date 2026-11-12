@@ -14,9 +14,12 @@ parser.add_argument('--icons',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True,help='New output directory; an existing app is never replaced.')
 parser.add_argument('--server',default='https://api.productivitymon.com')
 parser.add_argument('--version',default='0.1.0-alpha.mac.1')
+parser.add_argument('--channel',choices=['development','experimental-alpha'],default='development')
+parser.add_argument('--build-number',type=int,default=1)
 parser.add_argument('--archive',action='store_true',help='Also create a ZIP preserving Mac executable permissions.')
 args=parser.parse_args()
 if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?',args.version):parser.error('--version must be a release version')
+if args.build_number < 1:parser.error('--build-number must be positive')
 if not args.server.startswith(('https://','http://')):parser.error('--server must be an HTTP(S) URL')
 with args.executable.open('rb') as executable:
     header=executable.read(8)
@@ -41,8 +44,8 @@ shutil.copytree(args.models,resources/'models')
 shutil.copytree(args.icons,resources/'icons')
 (resources/'server.txt').write_text(args.server+'\n',encoding='utf-8')
 with (contents/'Info.plist').open('wb') as file:
-    plistlib.dump({'CFBundleIdentifier':'com.productivitymon.desktop','CFBundleName':'ProductivityMon','CFBundleDisplayName':'ProductivityMon','CFBundleExecutable':'desk-mons','CFBundleIconFile':'ProductivityMon.icns','CFBundlePackageType':'APPL','CFBundleShortVersionString':args.version.split('-')[0],'CFBundleVersion':'1','LSMinimumSystemVersion':'12.0','LSUIElement':True,'NSHighResolutionCapable':True},file)
-(resources/'release.json').write_text(__import__('json').dumps({'version':args.version,'channel':'development','architecture':'arm64','server':args.server},indent=2)+'\n',encoding='utf-8')
+    plistlib.dump({'CFBundleIdentifier':'com.productivitymon.desktop','CFBundleName':'ProductivityMon','CFBundleDisplayName':'ProductivityMon','CFBundleExecutable':'desk-mons','CFBundleIconFile':'ProductivityMon.icns','CFBundlePackageType':'APPL','CFBundleShortVersionString':args.version.split('-')[0],'CFBundleVersion':str(args.build_number),'LSMinimumSystemVersion':'12.0','LSUIElement':True,'NSHighResolutionCapable':True},file)
+(resources/'release.json').write_text(__import__('json').dumps({'version':args.version,'channel':args.channel,'architecture':'arm64','server':args.server},indent=2)+'\n',encoding='utf-8')
 print(f'Created unsigned development bundle: {app}')
 if args.archive:
     with zipfile.ZipFile(archive,'x',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as zipped:
