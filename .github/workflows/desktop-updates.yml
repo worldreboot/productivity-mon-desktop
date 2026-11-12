@@ -102,7 +102,7 @@ jobs:
         shell: bash
         run: python desk/updater/reuse_build.py "$NATIVE_RUN" --channel '${{ matrix.channel }}' --output 'desk/app/target/${{ matrix.target }}/release/${{ matrix.executable }}'
       - name: Native Mac rendering smoke
-        if: matrix.platform == 'macos'
+        if: matrix.platform == 'macos' && inputs.reuse_native_run == ''
         run: python desk/macos/smoke.py
       - name: Upload development executable
         uses: actions/upload-artifact@v4
